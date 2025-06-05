@@ -15,12 +15,14 @@ import {
   ApiBadRequestResponse,
   ApiParam,
   ApiBody,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { CreateProducerUseCase } from '@/producer/application/use-cases/create-producer/create-producer.usecase';
 import { ListProducersUseCase } from '@/producer/application/use-cases/list-producer/list-producers.use-case';
 import { UpdateProducerUseCase } from '@/producer/application/use-cases/update-producer/update-producer.usecase';
 import { DeleteProducerUseCase } from '@/producer/application/use-cases/delete-producer/delete-producer.usecase';
 import { CreateProducerDTO } from '@/producer/presentation/dto/create.dto';
+import { ProducerDto } from '../dto/get-producer.dto';
 
 @ApiTags('Producers')
 @Controller('producers')
@@ -51,6 +53,8 @@ export class ProducerController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'Lista todos os produtores e suas fazendas' })
+  @ApiOkResponse({ description: 'Lista de produtores', type: [ProducerDto] })
   async findAll() {
     try {
       return await this.listProducers.execute();
@@ -58,6 +62,7 @@ export class ProducerController {
       throw new BadRequestException(error.message || 'Erro desconhecido');
     }
   }
+
   @Put(':id')
   @ApiOperation({ summary: 'Atualiza um produtor' })
   @ApiParam({ name: 'id', required: true })

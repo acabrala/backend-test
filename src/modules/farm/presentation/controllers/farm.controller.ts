@@ -24,6 +24,7 @@ import { UpdateFarmUseCase } from '@/farm/application/use-cases/update-farm/upda
 import { DeleteFarmUseCase } from '@/farm/application/use-cases/delete-farm/delete-farm.usecase';
 import { ListFarmsByProducerUseCase } from '@/farm/application/use-cases/list-farm-by-producer/list-farms-by-producer.usecase';
 import { Farm } from '@/farm/domain/entities/farm.entity';
+import { FarmDto } from '../dto/farm.dto';
 
 @ApiTags('Farms')
 @Controller('farms')
@@ -87,7 +88,7 @@ export class FarmController {
   @ApiResponse({
     status: 200,
     description: 'Lista de fazendas do produtor',
-    type: [Farm],
+    type: [FarmDto],
   })
   async getFarmsByProducer(
     @Param('producerId') producerId: string,
