@@ -7,7 +7,7 @@ import { ListProducersUseCase } from '@/producer/application/use-cases/list-prod
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateProducerUseCase } from '@/producer/application/use-cases/update-producer/update-producer.usecase';
-import { DeleteProducerUseCase } from '@/producer/application/use-cases/delete-producar/delete-producer.usecase';
+import { DeleteProducerUseCase } from '@/producer/application/use-cases/delete-producer/delete-producer.usecase';
 import { PrismaModule } from '../../../prisma/prisma.module';
 
 @Module({
