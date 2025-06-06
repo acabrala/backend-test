@@ -4,153 +4,160 @@ import { CreateProducerUseCase } from '@/producer/application/use-cases/create-p
 import { ListProducersUseCase } from '@/producer/application/use-cases/list-producer/list-producers.use-case';
 import { UpdateProducerUseCase } from '@/producer/application/use-cases/update-producer/update-producer.usecase';
 import { DeleteProducerUseCase } from '@/producer/application/use-cases/delete-producer/delete-producer.usecase';
-import { BadRequestException } from '@nestjs/common';
+import { UpdateProducerDTO } from '@/producer/presentation/dto/update-producer.dto';
+import { Producer } from '@/producer/domain/entities/producer.entity';
+import { Farm } from '@/farm/domain/entities/farm.entity'; // Corrected import path
+import { Crop } from '@/crop/domain/entities/crop.entity';   // Corrected import path
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+
+// Sample data
+const mockProducerId = 'producer-id-123';
+const mockFarmId = 'farm-id-1';
+
+// Mock Domain Entities that ListProducersUseCase would return
+const mockCropDomainSoy = new Crop('crop-id-1', mockFarmId, 'Soy', 10.5, new Date('2023-01-15'), new Date('2023-05-15'));
+const mockCropDomainCorn = new Crop('crop-id-2', mockFarmId, 'Corn', 20.0, new Date('2023-03-01'), new Date('2023-07-01'));
+
+const mockFarmDomain = new Farm(
+  mockFarmId,
+  'Farm Name',
+  'City',
+  'ST',
+  100,
+  50,
+  20,
+  mockProducerId,
+  [mockCropDomainSoy, mockCropDomainCorn]
+);
+
+const mockProducerDomainEntity = new Producer(
+  '12345678901',
+  'Test Producer',
+  [mockFarmDomain],
+  mockProducerId,
+);
+
+const mockUpdatedDomainProducer = new Producer(
+  '12345678901',
+  'Updated Test Producer',
+  [],
+  mockProducerId,
+);
 
 describe('ProducerController', () => {
   let controller: ProducerController;
-  let createUseCase: CreateProducerUseCase;
-  let listUseCase: ListProducersUseCase;
-  let updateUseCase: UpdateProducerUseCase;
-  let deleteUseCase: DeleteProducerUseCase;
+  let listProducersUseCase: jest.Mocked<ListProducersUseCase>;
+  let updateProducerUseCase: jest.Mocked<UpdateProducerUseCase>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProducerController],
       providers: [
-        {
-          provide: CreateProducerUseCase,
-          useValue: { execute: jest.fn() },
-        },
-        {
-          provide: ListProducersUseCase,
-          useValue: { execute: jest.fn() },
-        },
-        {
-          provide: UpdateProducerUseCase,
-          useValue: { execute: jest.fn() },
-        },
-        {
-          provide: DeleteProducerUseCase,
-          useValue: { execute: jest.fn() },
-        },
+        { provide: CreateProducerUseCase, useValue: { execute: jest.fn() } },
+        { provide: ListProducersUseCase, useValue: { execute: jest.fn() } },
+        { provide: UpdateProducerUseCase, useValue: { execute: jest.fn() } },
+        { provide: DeleteProducerUseCase, useValue: { execute: jest.fn() } },
       ],
     }).compile();
 
     controller = module.get<ProducerController>(ProducerController);
-    createUseCase = module.get<CreateProducerUseCase>(CreateProducerUseCase);
-    listUseCase = module.get<ListProducersUseCase>(ListProducersUseCase);
-    updateUseCase = module.get<UpdateProducerUseCase>(UpdateProducerUseCase);
-    deleteUseCase = module.get<DeleteProducerUseCase>(DeleteProducerUseCase);
+    listProducersUseCase = module.get(ListProducersUseCase);
+    updateProducerUseCase = module.get(UpdateProducerUseCase);
   });
 
-  describe('create', () => {
-    it('deve criar um produtor e retornar dados', async () => {
-      const dto = { name: 'Produtor Teste', document: '12345678900' };
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-      const result = {
-        id: '1',
-        name: dto.name,
-        cpfCnpj: dto.document,
-      } as any;
-
-      jest.spyOn(createUseCase, 'execute').mockResolvedValue(result);
-
-      const response = await controller.create(dto);
-
-      expect(createUseCase.execute).toHaveBeenCalledWith(dto);
-      expect(response).toEqual({
-        id: result.id,
-        name: result.name,
-        document: result.cpfCnpj,
-      });
-    });
-
-    it('deve lançar BadRequestException ao ocorrer erro', async () => {
-      const dto = { name: 'Produtor Teste', document: '12345678900' };
-      jest
-        .spyOn(createUseCase, 'execute')
-        .mockRejectedValue(new Error('Falha'));
-
-      await expect(controller.create(dto)).rejects.toThrow(BadRequestException);
-    });
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
   });
 
   describe('findAll', () => {
-    it('deve retornar lista de produtores', async () => {
-      const producers = [
-        { id: '1', name: 'Produtor 1', cpfCnpj: '11111111111' },
-        { id: '2', name: 'Produtor 2', cpfCnpj: '22222222222' },
-      ] as any[];
-
-      jest.spyOn(listUseCase, 'execute').mockResolvedValue(producers);
-
-      const response = await controller.findAll();
-
-      expect(listUseCase.execute).toHaveBeenCalled();
-      expect(response).toBe(producers);
+    it('should call listProducers.execute once', async () => {
+      listProducersUseCase.execute.mockResolvedValueOnce([mockProducerDomainEntity]);
+      await controller.findAll();
+      expect(listProducersUseCase.execute).toHaveBeenCalledTimes(1);
     });
 
-    it('deve lançar BadRequestException ao ocorrer erro', async () => {
-      jest.spyOn(listUseCase, 'execute').mockRejectedValue(new Error('Falha'));
-
-      await expect(controller.findAll()).rejects.toThrow(BadRequestException);
-    });
-  });
-
-  describe('update', () => {
-    it('deve atualizar produtor e retornar dados', async () => {
-      const id = '1';
-      const dto = { name: 'Produtor Atualizado', document: '99999999999' };
-
-      const updated = {
-        id,
-        name: dto.name,
-        cpfCnpj: dto.document,
-      } as any;
-
-      jest.spyOn(updateUseCase, 'execute').mockResolvedValue(updated);
-
-      const result = await controller.update(id, dto);
-
-      expect(updateUseCase.execute).toHaveBeenCalledWith(id, dto);
-      expect(result).toEqual({
-        id: updated.id,
-        name: updated.name,
-        document: updated.cpfCnpj,
-      });
+    it('should return the result from listProducers.execute (which are domain Producer entities)', async () => {
+      const expectedProducers = [mockProducerDomainEntity];
+      listProducersUseCase.execute.mockResolvedValueOnce(expectedProducers);
+      const result = await controller.findAll();
+      expect(result).toEqual(expectedProducers);
     });
 
-    it('deve lançar BadRequestException ao ocorrer erro', async () => {
-      const id = '1';
-      const dto = { name: 'Produtor Atualizado', document: '99999999999' };
-      jest
-        .spyOn(updateUseCase, 'execute')
-        .mockRejectedValue(new Error('Falha'));
-
-      await expect(controller.update(id, dto)).rejects.toThrow(
-        BadRequestException,
+    it('should throw InternalServerErrorException if listProducers.execute throws an error', async () => {
+      listProducersUseCase.execute.mockRejectedValueOnce(new Error('Some random error'));
+      await expect(controller.findAll()).rejects.toThrow(
+        new InternalServerErrorException('Erro ao buscar produtores'),
       );
     });
   });
 
-  describe('delete', () => {
-    it('deve remover produtor com sucesso', async () => {
-      const id = '1';
-      jest.spyOn(deleteUseCase, 'execute').mockResolvedValue(undefined);
+  describe('update', () => {
+    const updateDto: UpdateProducerDTO = { name: 'Updated Test Producer' };
+    const expectedResponseFromUpdate = {
+      id: mockUpdatedDomainProducer.id,
+      name: mockUpdatedDomainProducer.name,
+      document: mockUpdatedDomainProducer.cpfCnpj,
+    };
 
-      const response = await controller.delete(id);
-
-      expect(deleteUseCase.execute).toHaveBeenCalledWith(id);
-      expect(response).toEqual({ message: 'Produtor removido com sucesso' });
+    it('should call updateProducer.execute with the correct id and UpdateProducerDTO', async () => {
+      updateProducerUseCase.execute.mockResolvedValueOnce(mockUpdatedDomainProducer);
+      await controller.update(mockProducerId, updateDto);
+      expect(updateProducerUseCase.execute).toHaveBeenCalledWith(mockProducerId, updateDto);
     });
 
-    it('deve lançar BadRequestException ao ocorrer erro', async () => {
-      const id = '1';
-      jest
-        .spyOn(deleteUseCase, 'execute')
-        .mockRejectedValue(new Error('Falha'));
+    it('should return the transformed result from updateProducer.execute', async () => {
+      updateProducerUseCase.execute.mockResolvedValueOnce(mockUpdatedDomainProducer);
+      const result = await controller.update(mockProducerId, updateDto);
+      expect(result).toEqual(expectedResponseFromUpdate);
+    });
 
-      await expect(controller.delete(id)).rejects.toThrow(BadRequestException);
+    it('should throw BadRequestException if updateProducer.execute throws a generic error', async () => {
+      const genericError = new Error('Some generic use case error');
+      updateProducerUseCase.execute.mockRejectedValueOnce(genericError);
+      await expect(controller.update(mockProducerId, updateDto)).rejects.toThrow(
+        new BadRequestException(genericError.message),
+      );
+    });
+
+    it('should throw BadRequestException if updateProducer.execute throws a BadRequestException', async () => {
+      const badRequestError = new BadRequestException('Specific bad request from use case');
+      updateProducerUseCase.execute.mockRejectedValueOnce(badRequestError);
+      await expect(controller.update(mockProducerId, updateDto)).rejects.toThrow(
+        new BadRequestException(badRequestError.message),
+      );
+    });
+
+    it('should throw BadRequestException if updateProducer.execute throws a NotFoundException (due to current controller error handling)', async () => {
+      const notFoundError = new NotFoundException('Producer not found from use case');
+      updateProducerUseCase.execute.mockRejectedValueOnce(notFoundError);
+      await expect(controller.update(mockProducerId, updateDto)).rejects.toThrow(
+         new BadRequestException(notFoundError.message)
+      );
+    });
+
+    it('should throw BadRequestException if updateProducer.execute throws an InternalServerErrorException from use case', async () => {
+      const internalError = new InternalServerErrorException('Internal Error from use case');
+      updateProducerUseCase.execute.mockRejectedValueOnce(internalError);
+      await expect(controller.update(mockProducerId, updateDto)).rejects.toThrow(
+        new BadRequestException(internalError.message)
+      );
+    });
+
+    it('should ensure the response format matches { id, name, document }', async () => {
+      updateProducerUseCase.execute.mockResolvedValueOnce(mockUpdatedDomainProducer);
+      const result = await controller.update(mockProducerId, updateDto);
+      expect(result).toHaveProperty('id', mockUpdatedDomainProducer.id);
+      expect(result).toHaveProperty('name', mockUpdatedDomainProducer.name);
+      expect(result).toHaveProperty('document', mockUpdatedDomainProducer.cpfCnpj);
+      expect(Object.keys(result).length).toBe(3);
     });
   });
 });

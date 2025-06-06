@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { IProducerRepository } from '@/producer/domain/repositories/producer.repository.interface';
-import { Producer } from '@/producer/domain/entities/producer.entitry';
+import { Producer } from '@/producer/domain/entities/producer.entity';
 
 @Injectable()
 export class ListProducersUseCase {

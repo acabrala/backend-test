@@ -2,12 +2,12 @@ import {
   Injectable,
   Inject,
   Logger,
-  BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { IProducerRepository } from '@/producer/domain/repositories/producer.repository.interface';
-import { ICpfCnpjValidator } from '@/producer/domain/validators/cpf-cnpj-validator.interface';
-import { Producer } from '@/producer/domain/entities/producer.entitry';
+import { Producer } from '@/producer/domain/entities/producer.entity';
+import { UpdateProducerDTO } from '@/producer/presentation/dto/update-producer.dto';
 
 @Injectable()
 export class UpdateProducerUseCase {
@@ -16,35 +16,47 @@ export class UpdateProducerUseCase {
   constructor(
     @Inject('IProducerRepository')
     private readonly producerRepo: IProducerRepository,
-    @Inject('ICpfCnpjValidator')
-    private readonly cpfCnpjValidator: ICpfCnpjValidator,
   ) {}
 
-  async execute(
-    id: string,
-    data: { name: string; document: string; farms?: any[] },
-  ): Promise<Producer> {
+  async execute(id: string, data: UpdateProducerDTO): Promise<Producer> {
     this.logger.log(`Iniciando atualização do produtor com ID: ${id}`);
 
-    if (!this.cpfCnpjValidator.isValid(data.document)) {
-      this.logger.warn(`Documento inválido fornecido: ${data.document}`);
-      throw new BadRequestException('CPF ou CNPJ inválido');
+    if (data.name === undefined) {
+      // No actual update data provided, fetch and return existing.
+      const existingProducer = await this.producerRepo.findById(id);
+      if (!existingProducer) {
+        throw new NotFoundException(`Produtor com ID ${id} não encontrado.`);
+      }
+      this.logger.log(
+        `Nenhum dado de nome fornecido para atualização do produtor com ID: ${id}. Retornando existente.`,
+      );
+      return existingProducer;
     }
 
-    const producer = new Producer(
-      data.document,
-      data.name,
-      data.farms ?? [],
-      id,
-    );
+    // Ensure producer exists before attempting update
+    const existing = await this.producerRepo.findById(id);
+    if (!existing) {
+      throw new NotFoundException(
+        `Produtor com ID ${id} não encontrado para atualização.`,
+      );
+    }
 
     try {
-      const updated = await this.producerRepo.update(id, producer);
+      // Only pass name to the repository's update method
+      const updatedProducer = await this.producerRepo.update(id, {
+        name: data.name,
+      });
       this.logger.log(`Produtor com ID ${id} atualizado com sucesso`);
-      return updated;
+      return updatedProducer;
     } catch (error) {
-      this.logger.error(`Erro ao atualizar produtor com ID ${id}`, error.stack);
-      throw new InternalServerErrorException('Erro ao atualizar produtor');
+      this.logger.error(
+        `Erro ao atualizar produtor com ID ${id}: ${error.message}`,
+        error.stack,
+      );
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Erro ao atualizar produtor.');
     }
   }
 }

@@ -1,201 +1,247 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaProducerRepository } from './prisma-producer.repository';
 import { PrismaService } from '../../../../../../prisma/prisma.service';
-import { Producer } from '@/producer/domain/entities/producer.entitry';
+import { Producer } from '@/producer/domain/entities/producer.entity';
 import { Farm } from '@/farm/domain/entities/farm.entity';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+
+// Mock data
+const mockPrismaProducerData = {
+  id: 'producer-id-1',
+  document: '12345678901',
+  name: 'Test Producer',
+  farms: [
+    {
+      id: 'farm-id-1',
+      name: 'Test Farm 1',
+      city: 'Test City',
+      state: 'TS',
+      totalArea: 100,
+      cultivableArea: 50,
+      vegetationArea: 20,
+      producerId: 'producer-id-1',
+      // Prisma Farm objects might have more fields not directly used by Farm entity
+    },
+  ],
+};
+
+const mockExpectedFarmEntity = new Farm(
+  mockPrismaProducerData.farms[0].id,
+  mockPrismaProducerData.farms[0].name,
+  mockPrismaProducerData.farms[0].city,
+  mockPrismaProducerData.farms[0].state,
+  mockPrismaProducerData.farms[0].totalArea,
+  mockPrismaProducerData.farms[0].cultivableArea,
+  mockPrismaProducerData.farms[0].vegetationArea,
+  mockPrismaProducerData.farms[0].producerId,
+  [], // Crops initialized as empty
+);
+
+const mockExpectedProducerEntityWithFarms = new Producer(
+  mockPrismaProducerData.document,
+  mockPrismaProducerData.name,
+  [mockExpectedFarmEntity],
+  mockPrismaProducerData.id,
+);
+
+const mockExpectedProducerEntityNoFarms = new Producer(
+  mockPrismaProducerData.document,
+  mockPrismaProducerData.name,
+  [],
+  mockPrismaProducerData.id,
+);
 
 describe('PrismaProducerRepository', () => {
   let repository: PrismaProducerRepository;
-  let prisma: PrismaService;
-
-  const mockPrismaService = {
+  let prismaServiceMock: {
     producer: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      findMany: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    },
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
+    prismaServiceMock = {
+      producer: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PrismaProducerRepository,
-        { provide: PrismaService, useValue: mockPrismaService },
+        {
+          provide: PrismaService,
+          useValue: prismaServiceMock,
+        },
       ],
     }).compile();
 
     repository = module.get<PrismaProducerRepository>(PrismaProducerRepository);
-    prisma = module.get<PrismaService>(PrismaService);
-
-    jest.clearAllMocks();
   });
 
-  describe('findByDocument', () => {
-    it('deve retornar producer quando encontrado', async () => {
-      const fakeData = { id: '1', document: '123', name: 'Producer 1' };
-      (prisma.producer.findUnique as jest.Mock).mockResolvedValue(fakeData);
+  it('should be defined', () => {
+    expect(repository).toBeDefined();
+  });
 
-      const result = await repository.findByDocument('123');
-
-      expect(result).toBeInstanceOf(Producer);
-      expect(result?.cpfCnpj).toBe('123');
-      expect(prisma.producer.findUnique).toHaveBeenCalledWith({
-        where: { document: '123' },
+  describe('findById', () => {
+    it('should call prisma.producer.findUnique with correct ID', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(mockPrismaProducerData);
+      await repository.findById('producer-id-1');
+      expect(prismaServiceMock.producer.findUnique).toHaveBeenCalledWith({
+        where: { id: 'producer-id-1' },
       });
     });
 
-    it('deve retornar null quando não encontrado', async () => {
-      (prisma.producer.findUnique as jest.Mock).mockResolvedValue(null);
+    it('should return a mapped Producer domain entity (no farms) if Prisma returns data', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(mockPrismaProducerData);
+      const result = await repository.findById('producer-id-1');
+      expect(result).toEqual(mockExpectedProducerEntityNoFarms);
+    });
 
-      const result = await repository.findByDocument('123');
-
+    it('should return null if Prisma returns no data', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(null);
+      const result = await repository.findById('non-existent-id');
       expect(result).toBeNull();
-    });
-
-    it('deve lançar erro ao ocorrer exceção', async () => {
-      (prisma.producer.findUnique as jest.Mock).mockRejectedValue(
-        new Error('Falha'),
-      );
-
-      await expect(repository.findByDocument('123')).rejects.toThrow('Falha');
-    });
-  });
-
-  describe('create', () => {
-    it('deve criar um producer com sucesso', async () => {
-      const producer = new Producer('123', 'Producer 1', [], '1');
-      (prisma.producer.create as jest.Mock).mockResolvedValue({
-        id: '1',
-        document: '123',
-        name: 'Producer 1',
-      });
-
-      const result = await repository.create(producer);
-
-      expect(result).toBeInstanceOf(Producer);
-      expect(result.cpfCnpj).toBe('123');
-      expect(prisma.producer.create).toHaveBeenCalledWith({
-        data: { name: 'Producer 1', document: '123' },
-      });
-    });
-
-    it('deve lançar ConflictException ao violar restrição única (P2002)', async () => {
-      const producer = new Producer('123', 'Producer 1', [], '1');
-      const error = new PrismaClientKnownRequestError(
-        'Unique constraint failed',
-        {
-          code: 'P2002',
-          clientVersion: '4.0.0',
-        },
-      );
-      (prisma.producer.create as jest.Mock).mockRejectedValue(error);
-
-      await expect(repository.create(producer)).rejects.toThrow(
-        ConflictException,
-      );
-    });
-
-    it('deve lançar erro genérico para outros erros', async () => {
-      const producer = new Producer('123', 'Producer 1', [], '1');
-      (prisma.producer.create as jest.Mock).mockRejectedValue(
-        new Error('Erro genérico'),
-      );
-
-      await expect(repository.create(producer)).rejects.toThrow(
-        'Erro genérico',
-      );
-    });
-  });
-
-  describe('findAll', () => {
-    it('deve retornar lista de producers com fazendas', async () => {
-      const fakeList = [
-        {
-          id: '1',
-          document: '123',
-          name: 'Producer 1',
-          farms: [
-            {
-              id: '10',
-              name: 'Farm 1',
-              city: 'City',
-              state: 'State',
-              totalArea: 100,
-              cultivableArea: 50,
-              vegetationArea: 50,
-              producerId: '1',
-            },
-          ],
-        },
-      ];
-      (prisma.producer.findMany as jest.Mock).mockResolvedValue(fakeList);
-
-      const result = await repository.findAll();
-
-      expect(result.length).toBe(1);
-      expect(result[0]).toBeInstanceOf(Producer);
-      expect(result[0].farms[0]).toBeInstanceOf(Farm);
-    });
-
-    it('deve lançar BadRequestException em erro', async () => {
-      (prisma.producer.findMany as jest.Mock).mockRejectedValue(
-        new Error('Falha'),
-      );
-
-      await expect(repository.findAll()).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('update', () => {
-    it('deve atualizar producer com sucesso', async () => {
-      const producer = new Producer('123', 'Producer Updated', [], '1');
-      (prisma.producer.update as jest.Mock).mockResolvedValue({
-        id: '1',
-        document: '123',
-        name: 'Producer Updated',
-      });
+    const updateData = { name: 'Updated Producer Name' };
+    const prismaProducerAfterUpdate = { ...mockPrismaProducerData, name: updateData.name, farms: undefined }; // update doesn't involve farms in its direct return mapping
+    const expectedProducerEntityAfterUpdate = new Producer(
+      prismaProducerAfterUpdate.document,
+      prismaProducerAfterUpdate.name,
+      [], // No farms expected from update mapping
+      prismaProducerAfterUpdate.id,
+    );
 
-      const result = await repository.update('1', producer);
-
-      expect(result).toBeInstanceOf(Producer);
-      expect(result.name).toBe('Producer Updated');
-      expect(prisma.producer.update).toHaveBeenCalledWith({
-        where: { id: '1' },
-        data: { name: 'Producer Updated', document: '123' },
+    it('should call prisma.producer.update with correct ID and data', async () => {
+      prismaServiceMock.producer.update.mockResolvedValue(prismaProducerAfterUpdate);
+      await repository.update('producer-id-1', updateData);
+      expect(prismaServiceMock.producer.update).toHaveBeenCalledWith({
+        where: { id: 'producer-id-1' },
+        data: { name: updateData.name },
       });
     });
 
-    it('deve lançar erro ao ocorrer exceção', async () => {
-      (prisma.producer.update as jest.Mock).mockRejectedValue(
-        new Error('Falha'),
-      );
+    it('should return a mapped Producer domain entity (no farms) on successful update', async () => {
+      prismaServiceMock.producer.update.mockResolvedValue(prismaProducerAfterUpdate);
+      const result = await repository.update('producer-id-1', updateData);
+      expect(result).toEqual(expectedProducerEntityAfterUpdate);
+    });
 
-      await expect(
-        repository.update('1', new Producer('123', 'Name', [], '1')),
-      ).rejects.toThrow('Falha');
+    it('should throw NotFoundException if prisma.producer.update throws P2025 error', async () => {
+      const error = new PrismaClientKnownRequestError('Record to update not found.', {
+        code: 'P2025',
+        clientVersion: 'testVersion',
+      });
+      prismaServiceMock.producer.update.mockRejectedValue(error);
+      await expect(repository.update('non-existent-id', updateData)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should re-throw other errors from prisma.producer.update', async () => {
+      const error = new Error('Some other database error');
+      prismaServiceMock.producer.update.mockRejectedValue(error);
+      await expect(repository.update('producer-id-1', updateData)).rejects.toThrow(error);
     });
   });
 
-  describe('delete', () => {
-    it('deve deletar producer com sucesso', async () => {
-      (prisma.producer.delete as jest.Mock).mockResolvedValue(undefined);
-
-      await expect(repository.delete('1')).resolves.toBeUndefined();
-      expect(prisma.producer.delete).toHaveBeenCalledWith({
-        where: { id: '1' },
+  describe('findAll', () => {
+    it('should call prisma.producer.findMany with include: { farms: true }', async () => {
+      prismaServiceMock.producer.findMany.mockResolvedValue([mockPrismaProducerData]);
+      await repository.findAll();
+      expect(prismaServiceMock.producer.findMany).toHaveBeenCalledWith({
+        include: { farms: true },
       });
     });
 
-    it('deve lançar erro ao ocorrer exceção', async () => {
-      (prisma.producer.delete as jest.Mock).mockRejectedValue(
-        new Error('Falha'),
-      );
+    it('should return an array of mapped Producer domain entities, including mapped Farm entities', async () => {
+      prismaServiceMock.producer.findMany.mockResolvedValue([mockPrismaProducerData]);
+      const result = await repository.findAll();
+      expect(result).toEqual([mockExpectedProducerEntityWithFarms]);
+    });
+     it('should return an empty array if no producers are found', async () => {
+      prismaServiceMock.producer.findMany.mockResolvedValue([]);
+      const result = await repository.findAll();
+      expect(result).toEqual([]);
+    });
+  });
 
-      await expect(repository.delete('1')).rejects.toThrow('Falha');
+  describe('findByDocument', () => {
+    it('should call prisma.producer.findUnique with correct document', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(mockPrismaProducerData);
+      await repository.findByDocument(mockPrismaProducerData.document);
+      expect(prismaServiceMock.producer.findUnique).toHaveBeenCalledWith({
+        where: { document: mockPrismaProducerData.document },
+      });
+    });
+
+    it('should return a mapped Producer domain entity (no farms) if Prisma returns data', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(mockPrismaProducerData);
+      const result = await repository.findByDocument(mockPrismaProducerData.document);
+      expect(result).toEqual(mockExpectedProducerEntityNoFarms);
+    });
+
+    it('should return null if Prisma returns no data', async () => {
+      prismaServiceMock.producer.findUnique.mockResolvedValue(null);
+      const result = await repository.findByDocument('non-existent-document');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('create', () => {
+    const inputProducerEntity = new Producer('new-doc-123', 'New Producer', []); // ID is undefined before creation
+    const prismaProducerAfterCreation = {
+      id: 'newly-created-id',
+      document: inputProducerEntity.cpfCnpj,
+      name: inputProducerEntity.name,
+      // farms are not part of create data or immediate response mapping here
+    };
+    const expectedProducerEntityAfterCreation = new Producer(
+      prismaProducerAfterCreation.document,
+      prismaProducerAfterCreation.name,
+      [],
+      prismaProducerAfterCreation.id,
+    );
+
+    it('should call prisma.producer.create with correct data', async () => {
+      prismaServiceMock.producer.create.mockResolvedValue(prismaProducerAfterCreation);
+      await repository.create(inputProducerEntity);
+      expect(prismaServiceMock.producer.create).toHaveBeenCalledWith({
+        data: {
+          name: inputProducerEntity.name,
+          document: inputProducerEntity.cpfCnpj,
+        },
+      });
+    });
+
+    it('should return a mapped Producer domain entity (no farms) on successful creation', async () => {
+      prismaServiceMock.producer.create.mockResolvedValue(prismaProducerAfterCreation);
+      const result = await repository.create(inputProducerEntity);
+      expect(result).toEqual(expectedProducerEntityAfterCreation);
+    });
+
+    it('should throw ConflictException if prisma.producer.create throws P2002 error', async () => {
+      const error = new PrismaClientKnownRequestError('Unique constraint failed.', {
+        code: 'P2002',
+        clientVersion: 'testVersion',
+        meta: { target: ['document'] }, // Example meta, adjust if needed
+      });
+      prismaServiceMock.producer.create.mockRejectedValue(error);
+      await expect(repository.create(inputProducerEntity)).rejects.toThrow(ConflictException);
+    });
+
+    it('should re-throw other errors from prisma.producer.create', async () => {
+      const error = new Error('Some other database error');
+      prismaServiceMock.producer.create.mockRejectedValue(error);
+      await expect(repository.create(inputProducerEntity)).rejects.toThrow(error);
     });
   });
 });

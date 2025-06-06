@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,6 +23,7 @@ import { ListProducersUseCase } from '@/producer/application/use-cases/list-prod
 import { UpdateProducerUseCase } from '@/producer/application/use-cases/update-producer/update-producer.usecase';
 import { DeleteProducerUseCase } from '@/producer/application/use-cases/delete-producer/delete-producer.usecase';
 import { CreateProducerDTO } from '@/producer/presentation/dto/create.dto';
+import { UpdateProducerDTO } from '@/producer/presentation/dto/update-producer.dto';
 import { ProducerDto } from '../dto/get-producer.dto';
 
 @ApiTags('Producers')
@@ -59,14 +61,15 @@ export class ProducerController {
     try {
       return await this.listProducers.execute();
     } catch (error) {
-      throw new BadRequestException(error.message || 'Erro desconhecido');
+      throw new InternalServerErrorException('Erro ao buscar produtores');
     }
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Atualiza um produtor' })
   @ApiParam({ name: 'id', required: true })
-  async update(@Param('id') id: string, @Body() body: CreateProducerDTO) {
+  @ApiBody({ type: UpdateProducerDTO })
+  async update(@Param('id') id: string, @Body() body: UpdateProducerDTO) {
     try {
       const producer = await this.updateProducer.execute(id, body);
       return {

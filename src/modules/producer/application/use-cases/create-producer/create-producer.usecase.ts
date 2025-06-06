@@ -5,7 +5,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { Producer } from '@/producer/domain/entities/producer.entitry';
+import { Producer } from '@/producer/domain/entities/producer.entity';
 import { IProducerRepository } from '@/producer/domain/repositories/producer.repository.interface';
 import { ICpfCnpjValidator } from '@/producer/domain/validators/cpf-cnpj-validator.interface';
 
@@ -48,7 +48,7 @@ export class CreateProducerUseCase {
       return producer;
     } catch (error) {
       this.logger.error(
-        `Erro ao criar produtor: ${error.message}`,
+        `Erro ao criar produtor com documento ${dto.document}: ${error.message}`,
         error.stack,
       );
       throw new InternalServerErrorException('Erro ao criar produtor');
